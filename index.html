@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>USCSS // SOLAR ORBITAL — MOD_09_ORBITAL_TELEMETRY</title>
+
+<!-- 使用 loli.net 镜像字体，兼顾大陆访问 -->
+<link rel="preconnect" href="https://fonts.loli.net" crossorigin>
+<link href="https://fonts.loli.net/css2?family=Orbitron:wght@500;700&family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="styles.css">
+<!-- 预加载 BGM：弱网更快进入可播放状态 -->
+<link rel="preload" as="audio" href="kplbgm.mp3" type="audio/mpeg">
+</head>
+<body>
+<canvas id="sim-canvas"></canvas>
+
+<!-- Boot sequence -->
+<div id="bootSeq">
+  <div id="bootHeader">USCSS // SOLAR TAPE TERMINAL — BOOT SEQUENCE</div>
+  <pre id="bootText"></pre>
+  <div id="bootCursor"></div>
+</div>
+
+<!-- Intro cinematic overlay -->
+<div id="introOverlay"></div>
+<div id="introCaption" class="aberr">
+  <div id="capMain">USCSS // SOLAR TAPE</div>
+  <div id="capSub" class="sub">CINEMATIC ORBITAL PASS</div>
+  <div id="capSub2" class="smallsub">HELIOCENTRIC NAVIGATION CALIBRATION</div>
+</div>
+
+<!-- Letterbox bars -->
+<div id="letterboxTop"></div>
+<div id="letterboxBottom"></div>
+
+<!-- UI -->
+<div class="ui intro-hidden">
+  <div id="topbar" class="panel">
+    <div id="logo">
+      <div class="mark aberr">◎</div>
+      <div>
+        <div class="aberr">USCSS // SOLAR TAPE</div>
+        <div id="tag" class="aberr">MOD_09_ORBITAL_TELEMETRY</div>
+      </div>
+    </div>
+    <div id="status">
+      <div id="pill" class="aberr">SYS_READY</div>
+      <div id="ticker"><span>MEAN J2000 ELEMENTS // 2-BODY KEPLER TERMINAL // INTRO PASS ENABLED // TOUCH SAFE // </span></div>
+      <div id="btnIntroDesktop" class="mbtn aberr"> 重新播放开幕  /  REPLAY INTRO </div>
+      <div class="mobile-only">
+        <div id="btnNav" class="mbtn aberr">NAV</div>
+        <div id="btnTel" class="mbtn aberr">TEL</div>
+        <div id="btnCtl" class="mbtn aberr">CTRL</div>
+        <div id="btnIntroMobile" class="mbtn aberr">INTRO</div>
+        <div id="btnSkip" class="mbtn aberr">SKIP</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="nav" class="panel">
+    <h3 class="aberr">NAVIGATION STACK</h3>
+    <div id="navlist"></div>
+  </div>
+
+  <div id="telemetry" class="panel">
+    <h3 class="aberr">TELEMETRY / OBJECT_READOUT</h3>
+    <div id="readout"></div>
+    <div class="tiny dim aberr">CHILDREN</div>
+    <div id="children"></div>
+  </div>
+
+  <div id="controls" class="panel">
+    <h3 class="aberr">SIM CONTROLS</h3>
+    <div class="ctlrow"><span class="dim">SIM SPEED</span><span id="speedValue" class="aberr">1.00x</span></div>
+    <input id="speedSlider" class="range" type="range" min="0" max="4" step="0.01" value="1" />
+    <div class="ctlrow"><span class="dim">EPOCH OFFSET</span><span id="epochValue" class="aberr">T+0 d</span></div>
+    <input id="epochSlider" class="range" type="range" min="-36525" max="36525" step="1" value="0" />
+    <div class="ctlrow"><span class="dim">ZOOM LEVEL</span><span id="zoomText" class="aberr">100%</span></div>
+    <div class="ctlrow tiny dim"><span>TARGET LOCK</span><span id="targetText">NONE</span></div>
+    <div class="ctlrow tiny dim"><span>TIME SCALE</span><span>10× days / sec</span></div>
+  </div>
+
+  <div id="zoombar" class="panel">
+    <div id="zoomLabel" class="aberr">ZOOM</div>
+    <div>
+      <div id="zoomTrack"><div id="zoomThumb"></div></div>
+      <div id="zoomEnds"><span>WIDE</span><span>CLOSE</span></div>
+    </div>
+    <div class="tiny dim">LOG</div>
+  </div>
+
+  <div id="tooltip" class="panel tiny aberr">
+    [WHEEL] ZOOM  [DRAG] PAN  [CLICK] LOCK TARGET / LABEL  [BAR] DRAG ZOOM
+  </div>
+
+  <div id="hud-tl" class="hudcorner aberr">CH-01 / VISOR</div>
+  <div id="hud-tr" class="hudcorner aberr">TAPE BUS / A-PRIMARY</div>
+  <div id="hud-bl" class="hudcorner aberr">SYS_LOG / ERR_NULL</div>
+  <div id="hud-br" class="hudcorner aberr">SOL_KEPLER / MONITOR</div>
+
+  <div id="rail-left" class="rail aberr">ORBITAL STACK A</div>
+  <div id="rail-right" class="rail aberr">ORBITAL STACK B</div>
+</div>
+
+<div class="crt"></div>
+<div class="scanbar"></div>
+
+<script src="noise.js?v=20260102"></script>
+<script src="bodies.js?v=20260102"></script>
+<script src="baked_tex.js?v=20260102"></script>
+<script src="main.js?v=202601021"></script>
+</body>
+</html>
