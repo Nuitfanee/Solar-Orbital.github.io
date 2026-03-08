@@ -7,8 +7,10 @@
 
   const canvas=document.getElementById("sim-canvas");
   const ctx=canvas.getContext("2d");
-  let W=0,H=0,DPR=window.devicePixelRatio||1;
+  const MAX_DPR = IS_MOBILE ? 1.25 : 1.8;
+  let W=0,H=0,DPR=Math.min(window.devicePixelRatio||1,MAX_DPR);
   function resize(){
+    DPR=Math.min(window.devicePixelRatio||1,MAX_DPR);
     W=canvas.width=Math.floor(innerWidth*DPR);
     H=canvas.height=Math.floor(innerHeight*DPR);
     canvas.style.width=innerWidth+"px";
@@ -46,6 +48,9 @@
   class Body{
     constructor(o){
       Object.assign(this,o);
+      this.isBeltAsteroid=(o.type==="asteroid" && /^mba/.test(o.id));
+      const beltMatch=this.isBeltAsteroid?(/^mba(\d+)$/.exec(o.id)||null):null;
+      this.isIntroBeltSample=!!(beltMatch && (parseInt(beltMatch[1],10)%6===0));
       this.orientRad=((o.lonNodeDeg||0)+(o.argPeriDeg||0))*DEG;
       this.M0=(o.meanAnomaly0Deg!=null?o.meanAnomaly0Deg*DEG:Math.random()*TWO_PI);
       this.angle0=this.M0;
@@ -228,19 +233,64 @@
     return c;
   }
 
-  TEX.mercury=genPlanetTex(256,"rock",[hex2rgb("#8c8c94"),hex2rgb("#5e5e63")],{kind:"mercury"});
-  TEX.venus=genPlanetTex(256,"gas",[hex2rgb("#e6c288"),hex2rgb("#d4a355")],{kind:"venus"});
-  TEX.earth=genPlanetTex(256,"earth",null,{kind:"earth"});
-  TEX.mars=genPlanetTex(256,"rock",[hex2rgb("#c1440e"),hex2rgb("#8a3213")],{kind:"mars"});
-  TEX.jupiter=genPlanetTex(256,"gas",[hex2rgb("#c7b68b"),hex2rgb("#9c7c54")],{kind:"jupiter"});
-  TEX.saturn=genPlanetTex(256,"gas",[hex2rgb("#ead6b8"),hex2rgb("#cba878")],{kind:"saturn"});
-  TEX.uranus=genPlanetTex(256,"gas",[hex2rgb("#d1f5f7"),hex2rgb("#80d4db")],{kind:"uranus"});
-  TEX.neptune=genPlanetTex(256,"gas",[hex2rgb("#4b70dd"),hex2rgb("#2848a8")],{kind:"neptune"});
-  TEX.pluto=genPlanetTex(256,"rock",[hex2rgb("#daccba"),hex2rgb("#a89a8a")],{kind:"pluto"});
+  const PLANET_TEX_SIZE = IS_MOBILE ? 112 : 160;
+  const PLANET_TEX_SPECS={
+    mercury:{type:"rock",palette:[hex2rgb("#8c8c94"),hex2rgb("#5e5e63")],opts:{kind:"mercury"}},
+    venus:{type:"gas",palette:[hex2rgb("#e6c288"),hex2rgb("#d4a355")],opts:{kind:"venus"}},
+    earth:{type:"earth",palette:null,opts:{kind:"earth"}},
+    mars:{type:"rock",palette:[hex2rgb("#c1440e"),hex2rgb("#8a3213")],opts:{kind:"mars"}},
+    jupiter:{type:"gas",palette:[hex2rgb("#c7b68b"),hex2rgb("#9c7c54")],opts:{kind:"jupiter"}},
+    saturn:{type:"gas",palette:[hex2rgb("#ead6b8"),hex2rgb("#cba878")],opts:{kind:"saturn"}},
+    uranus:{type:"gas",palette:[hex2rgb("#d1f5f7"),hex2rgb("#80d4db")],opts:{kind:"uranus"}},
+    neptune:{type:"gas",palette:[hex2rgb("#4b70dd"),hex2rgb("#2848a8")],opts:{kind:"neptune"}},
+    pluto:{type:"rock",palette:[hex2rgb("#daccba"),hex2rgb("#a89a8a")],opts:{kind:"pluto"}}
+  };
+  function assignPlanetTex(id,tex){
+    if(!tex)return;
+    TEX[id]=tex;
+    bodies.forEach(b=>{if(b.id===id)b._tex=tex;});
+  }
+  function buildPlanetTex(id,size=PLANET_TEX_SIZE){
+    const spec=PLANET_TEX_SPECS[id];
+    if(!spec)return null;
+    return genPlanetTex(size,spec.type,spec.palette,spec.opts);
+  }
+  const BAKED_TEX_DATA=(window.__BAKED_PLANET_TEX||{});
+  function loadBakedTex(id){
+    const data=BAKED_TEX_DATA[id];
+    if(!data) return false;
+    const img=new Image();
+    img.decoding="async";
+    img.onload=()=>assignPlanetTex(id,img);
+    img.src=data;
+    return true;
+  }
+  ["earth","mars","jupiter"].forEach(loadBakedTex);
 
-  bodies.forEach(b=>{if((b.type==="planet"||b.id==="pluto")&&TEX[b.id])b._tex=TEX[b.id];});
+  const textureWarmupQueue=["mercury","venus","saturn","uranus","neptune","pluto"];
+  let textureWarmupStarted=false;
+  const queueTextureWarmup = cb => {
+    if(typeof window.requestIdleCallback === "function"){
+      window.requestIdleCallback(cb,{timeout:240});
+      return;
+    }
+    setTimeout(()=>cb({didTimeout:true,timeRemaining:()=>0}),90);
+  };
+  function warmupPlanetTextures(){
+    if(textureWarmupStarted)return;
+    textureWarmupStarted=true;
+    const runNext=()=>{
+      while(textureWarmupQueue.length && TEX[textureWarmupQueue[0]])textureWarmupQueue.shift();
+      if(!textureWarmupQueue.length)return;
+      const id=textureWarmupQueue.shift();
+      assignPlanetTex(id,buildPlanetTex(id));
+      if(textureWarmupQueue.length)queueTextureWarmup(runNext);
+    };
+    queueTextureWarmup(runNext);
+  }
 
   // === 烘焙贴图数据已拆分到 baked_tex_*.js：运行时不加载参考图 ===
+  /*
   const BAKED_TEX_DATA=(window.__BAKED_PLANET_TEX||{});
   function loadBakedTex(id){
     const data=BAKED_TEX_DATA[id];
@@ -260,6 +310,7 @@
   loadBakedTex("mercury");
   loadBakedTex("venus");
   loadBakedTex("moon");
+  */
 
 
   const NAV_ORDER=[
@@ -730,7 +781,7 @@ this.timelineLen=t;
         try{
           this._fadingOut=false;
           this._baseVol=1.0;
-          this.bgm.load();
+          if(this.bgm.readyState===0)this.bgm.load();
           this.bgm.volume = this._baseVol;
           this.bgm.currentTime = 0;
 
@@ -1186,7 +1237,7 @@ this.timelineLen=t;
     let alpha=orbitIntroAlpha(b);
     if(isMoon && camera.zoom<0.12)return;
 
-    if(b.type==="asteroid" && /^mba/.test(b.id)){
+    if(b.isBeltAsteroid){
       const zFade=smoothstep(0.035,0.12,camera.zoom);
       alpha*=zFade;
       if(alpha<0.02)return;
@@ -1212,6 +1263,13 @@ this.timelineLen=t;
     const maxSteps=(b.type==="comet"||e>0.6)?1200:300;
     const minSteps=(b.type==="comet"||e>0.6)?140:50;
     steps=clamp(steps,minSteps,maxSteps);
+    if(intro.active){
+      const isFocusOrbit=!!(intro.currentBody && (b.id===intro.currentBody.id || b.parentId===intro.currentBody.id));
+      const introStepScale=isFocusOrbit?0.82:0.48;
+      const introMax=(b.type==="comet"||e>0.6)?420:180;
+      const introMin=isFocusOrbit?40:24;
+      steps=clamp(Math.round(steps*introStepScale),introMin,introMax);
+    }
     const orient=b.orientRad||0;
 
     if(b.orbitMode==="ellipse"&&e>0){
@@ -1415,9 +1473,9 @@ this.timelineLen=t;
       let fs=10;
       if(imp>=3)fs=12;
       if(camera.target===b)fs=14;
-      if(b.type==="asteroid" && /^mba/.test(b.id))fs=8;
+      if(b.isBeltAsteroid)fs=8;
       let alpha=1;
-      if(b.type==="asteroid" && /^mba/.test(b.id)){
+      if(b.isBeltAsteroid){
         const zFade=smoothstep(0.06,0.16,camera.zoom);
         const sFade=smoothstep(0.7,1.4,b.size);
         alpha=zFade*sFade;
@@ -1475,6 +1533,37 @@ this.timelineLen=t;
     ctx.restore();
   }
 
+  const INTRO_RENDER_IDS={
+    inner:new Set(["sun","mercury","venus","earth","mars"]),
+    belt:new Set(["sun","mercury","venus","earth","mars","jupiter","ceres","vesta","pallas","hygiea"]),
+    outer:new Set(["sun","jupiter","saturn","uranus","neptune","pluto","halley"]),
+    all:new Set(["sun","mercury","venus","earth","mars","jupiter","saturn","uranus","neptune","pluto","halley"])
+  };
+  function introRenderSet(){
+    return INTRO_RENDER_IDS[intro.focusBand]||INTRO_RENDER_IDS.all;
+  }
+  function isIntroMoonCandidate(b){
+    return b.type==="moon" && !!intro.currentBody && b.parentId===intro.currentBody.id;
+  }
+  function shouldDrawOrbitInIntro(b){
+    if(!intro.active)return true;
+    if(b.isBeltAsteroid)return false;
+    if(b.type==="moon")return isIntroMoonCandidate(b);
+    const set=introRenderSet();
+    return set.has(b.id) || !!(intro.currentBody && b.id===intro.currentBody.id);
+  }
+  function shouldDrawBodyInIntro(b){
+    if(!intro.active)return true;
+    if(b.isBeltAsteroid)return intro.focusBand==="belt" && b.isIntroBeltSample;
+    if(b.type==="moon")return isIntroMoonCandidate(b);
+    const set=introRenderSet();
+    return set.has(b.id) || !!(intro.currentBody && b.id===intro.currentBody.id);
+  }
+  function shouldUpdateBodyInIntro(b){
+    if(!intro.active)return true;
+    return shouldDrawOrbitInIntro(b) || shouldDrawBodyInIntro(b);
+  }
+
   const navPanel=document.getElementById("nav");
   const telPanel=document.getElementById("telemetry");
   const ctlPanel=document.getElementById("controls");
@@ -1500,6 +1589,7 @@ this.timelineLen=t;
 
   bodies.forEach(b=>b.update(simDaysTotal(),byId));
   intro.build();
+  requestAnimationFrame(()=>requestAnimationFrame(warmupPlanetTextures));
 
   const bootSeqEl=document.getElementById("bootSeq");
   const bootTextEl=document.getElementById("bootText");
@@ -1539,7 +1629,13 @@ this.timelineLen=t;
     const dtDays=realDt*speed*TIME_SCALE*timeFactor;
     simElapsedDays+=dtDays;
     const totalDays=simDaysTotal();
-    bodies.forEach(b=>b.update(totalDays,byId));
+    if(intro.active){
+      for(const b of bodies){
+        if(shouldUpdateBodyInIntro(b))b.update(totalDays,byId);
+      }
+    }else{
+      bodies.forEach(b=>b.update(totalDays,byId));
+    }
     intro.update(realDt);
 
     if(intro.active){
@@ -1567,8 +1663,18 @@ this.timelineLen=t;
     updateZoomText();
     drawStarfield();
     beginWorld();
-    bodies.forEach(drawOrbit);
-    bodies.forEach(drawBody);
+    if(intro.active){
+      for(const b of bodies){
+        if(shouldDrawOrbitInIntro(b))drawOrbit(b);
+      }
+      for(const b of bodies){
+        if(shouldDrawBodyInIntro(b))drawBody(b);
+        else b._visible=false;
+      }
+    }else{
+      bodies.forEach(drawOrbit);
+      bodies.forEach(drawBody);
+    }
     endWorld();
     drawLabels();
     drawIntroVFX();
