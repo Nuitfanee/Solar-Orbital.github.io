@@ -85,7 +85,7 @@ add({id:"hygiea",name:"健神星",enName:"Hygiea",type:"asteroid",parentId:"sun"
 add({id:"eris",name:"阋神星",enName:"Eris",type:"dwarf",parentId:"sun",orbitMode:"ellipse",
   aAU:67.997,eccentricity:0.43697,inclinationDeg:43.869,
   lonNodeDeg:36.027,argPeriDeg:150.728,meanAnomaly0Deg:211.457,
-  size:3.1,color:"#d5d2d0",orbitalPeriodDays:557*365.25,rotationPeriodHours:25.9,radiusKm:1163,mass10e24kg:1.66});
+  size:3.1,color:"#d5d2d0",orbitalPeriodDays:557*365.25,rotationPeriodHours:25.9,radiusKm:1163,mass10e24kg:0.0166});
 
 add({id:"haumea",name:"妊神星",enName:"Haumea",type:"dwarf",parentId:"sun",orbitMode:"ellipse",
   aAU:43.13,eccentricity:0.195,inclinationDeg:28.2,

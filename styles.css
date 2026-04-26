@@ -372,8 +372,18 @@ body.intro-active #letterboxBottom{
   position:fixed;inset:0;z-index:10;pointer-events:none;
   opacity:1;transition:opacity .8s ease;
 }
-.ui.intro-hidden{opacity:0;}
+.ui.intro-hidden{opacity:0;pointer-events:none;}
+.ui.intro-hidden *{pointer-events:none!important;}
 .ui.intro-visible{opacity:1;}
+
+@media (prefers-reduced-motion: reduce){
+  .crt::after,.scanbar,#ticker span,#bootCursor{
+    animation:none!important;
+  }
+  .navitem,#introOverlay,#bootSeq,.ui,#letterboxTop,#letterboxBottom{
+    transition:none!important;
+  }
+}
 
 
 /* --- Secondary navigation (moons) --- */

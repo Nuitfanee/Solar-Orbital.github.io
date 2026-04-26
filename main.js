@@ -44,6 +44,32 @@
 
   let epochDays=0,simElapsedDays=0;
   const simDaysTotal=()=>epochDays+simElapsedDays;
+  const normAngle=a=>((a%TWO_PI)+TWO_PI)%TWO_PI;
+  function solveKepler(M,e){
+    M=normAngle(M);
+    if(e<1e-8)return M;
+    let E=e<0.8?M:Math.PI;
+    for(let i=0;i<32;i++){
+      const f=E-e*Math.sin(E)-M;
+      const fp=1-e*Math.cos(E);
+      let step=f/fp;
+      if(!Number.isFinite(step)){E=M;break;}
+      if(Math.abs(step)>1)step=Math.sign(step);
+      E-=step;
+      if(Math.abs(step)<1e-11)break;
+    }
+    return E;
+  }
+  function orbitOffset(r,trueAnomaly,b){
+    const u=trueAnomaly+(b.argPeriRad||0);
+    const cosO=Math.cos(b.lonNodeRad||0),sinO=Math.sin(b.lonNodeRad||0);
+    const cosI=Math.cos(b.incRad||0);
+    const cosU=Math.cos(u),sinU=Math.sin(u);
+    return{
+      x:r*(cosO*cosU-sinO*sinU*cosI),
+      y:r*(sinO*cosU+cosO*sinU*cosI)
+    };
+  }
 
   class Body{
     constructor(o){
@@ -51,45 +77,54 @@
       this.isBeltAsteroid=(o.type==="asteroid" && /^mba/.test(o.id));
       const beltMatch=this.isBeltAsteroid?(/^mba(\d+)$/.exec(o.id)||null):null;
       this.isIntroBeltSample=!!(beltMatch && (parseInt(beltMatch[1],10)%6===0));
-      this.orientRad=((o.lonNodeDeg||0)+(o.argPeriDeg||0))*DEG;
+      this.lonNodeRad=(o.lonNodeDeg||0)*DEG;
+      this.argPeriRad=(o.argPeriDeg||0)*DEG;
+      this.incRad=(o.inclinationDeg||0)*DEG;
+      this.orientRad=this.lonNodeRad+this.argPeriRad;
       this.M0=(o.meanAnomaly0Deg!=null?o.meanAnomaly0Deg*DEG:Math.random()*TWO_PI);
       this.angle0=this.M0;
-      this.dist=0;this.x=0;this.y=0;this.spinAngle=Math.random()*TWO_PI;
+      this.dist=0;this.physDist=0;this.x=0;this.y=0;this.physX=0;this.physY=0;this.spinAngle=Math.random()*TWO_PI;
       this.children=[];this._tex=null;
     }
     update(totalDays,byId){
       const parent=this.parentId?byId.get(this.parentId):null;
-      if(!parent){this.x=0;this.y=0;return;}
+      if(!parent){this.x=0;this.y=0;this.physX=0;this.physY=0;this.physDist=0;return;}
       const omega=TWO_PI/(this.orbitalPeriodDays||1e9);
       const isMoon=this.type==="moon";
       const moonScale=(isMoon && parent.moonVizScale)?parent.moonVizScale:1;
+      const parentPhysX=parent.physX??parent.x;
+      const parentPhysY=parent.physY??parent.y;
       if(this.orbitMode==="ellipse"){
         const e=this.eccentricity??0;
         const aAUphys=(this.aAU ?? (this.aKm?this.aKm/AU_KM:0))||0;
-        const aAUviz=aAUphys*(isMoon?moonScale:1);
-        const M=(this.M0+omega*totalDays)%TWO_PI;
-        let E=M;
-        for(let i=0;i<6;i++){
-          const f=E-e*Math.sin(E)-M;
-          const fp=1-e*Math.cos(E);
-          E-=f/fp;
-        }
+        const M=this.M0+omega*totalDays;
+        const E=solveKepler(M,e);
         const cosE=Math.cos(E),sinE=Math.sin(E);
         const ftrue=Math.atan2(Math.sqrt(1-e*e)*sinE,cosE-e);
         const rNorm=(1-e*e)/(1+e*Math.cos(ftrue));
-        const rAUviz=aAUviz*rNorm;
-        const theta=ftrue+this.orientRad;
+        const rAUphys=aAUphys*rNorm;
+        const rAUviz=rAUphys*(isMoon?moonScale:1);
         this.dist=rAUviz*AU;
-        this.x=parent.x+this.dist*Math.cos(theta);
-        this.y=parent.y+this.dist*Math.sin(theta);
+        this.physDist=rAUphys*AU;
+        const viz=orbitOffset(this.dist,ftrue,this);
+        const phys=orbitOffset(this.physDist,ftrue,this);
+        this.x=parent.x+viz.x;
+        this.y=parent.y+viz.y;
+        this.physX=parentPhysX+phys.x;
+        this.physY=parentPhysY+phys.y;
       }else{
-        const baseAU=this.vizDistAU ?? this.aAU ?? (this.aKm?this.aKm/AU_KM:0);
+        const aAUphys=(this.aAU ?? (this.aKm?this.aKm/AU_KM:0))||0;
+        const baseAU=this.vizDistAU ?? aAUphys;
         const aAUviz=baseAU*(isMoon?moonScale:1);
-        const ang=(this.angle0+omega*totalDays)%TWO_PI;
-        const theta=ang+this.orientRad;
+        const ang=normAngle(this.angle0+omega*totalDays);
         this.dist=aAUviz*AU;
-        this.x=parent.x+this.dist*Math.cos(theta);
-        this.y=parent.y+this.dist*Math.sin(theta);
+        this.physDist=aAUphys*AU;
+        const viz=orbitOffset(this.dist,ang,this);
+        const phys=orbitOffset(this.physDist,ang,this);
+        this.x=parent.x+viz.x;
+        this.y=parent.y+viz.y;
+        this.physX=parentPhysX+phys.x;
+        this.physY=parentPhysY+phys.y;
       }
       if(!this.tidallyLocked && this.rotationPeriodHours){
         const spinOmega=TWO_PI/(Math.abs(this.rotationPeriodHours)/24);
@@ -321,7 +356,7 @@
   const typeSym={star:"◎",planet:"●",moon:"○",dwarf:"◇",asteroid:"◆",comet:"☄"};
   const navlist=document.getElementById("navlist");
   function makeNav(){
-    navlist.innerHTML="";
+    navlist.replaceChildren();
     const MOON_ORDER={
       earth:["moon"],
       mars:["phobos","deimos"],
@@ -334,8 +369,19 @@
       d.className="navitem aberr"+(isChild?" child":"");
       d.dataset.id=b.id;
       if(isChild)d.dataset.parent=b.parentId||"";
-      d.innerHTML=`<div class="navsym">${typeSym[b.type]||"●"}</div>
-      <div class="navnames"><div class="cn">${b.name}</div><div class="en">${b.enName}</div></div>`;
+      const sym=document.createElement("div");
+      sym.className="navsym";
+      sym.textContent=typeSym[b.type]||"●";
+      const names=document.createElement("div");
+      names.className="navnames";
+      const cn=document.createElement("div");
+      cn.className="cn";
+      cn.textContent=b.name;
+      const en=document.createElement("div");
+      en.className="en";
+      en.textContent=b.enName;
+      names.append(cn,en);
+      d.append(sym,names);
       d.onclick=()=>lockTarget(b);
       return d;
     };
@@ -376,6 +422,17 @@
   const readout=document.getElementById("readout");
   const childrenBox=document.getElementById("children");
   const targetText=document.getElementById("targetText");
+  function renderReadoutRows(rows){
+    readout.replaceChildren();
+    rows.forEach(([key,value])=>{
+      const k=document.createElement("div");
+      k.className="k";
+      k.textContent=key;
+      const v=document.createElement("div");
+      v.textContent=String(value);
+      readout.append(k,v);
+    });
+  }
   const fmt=(n,d=3)=>{
     if(n==null||Number.isNaN(n))return"--";
     if(Math.abs(n)>=10000)return n.toExponential(2);
@@ -383,8 +440,8 @@
   };
   function updateTelemetry(b){
     if(!b){
-      readout.innerHTML=`<div class="k">TARGET</div><div>NONE</div>`;
-      childrenBox.innerHTML="";targetText.textContent="NONE";return;
+      renderReadoutRows([["TARGET","NONE"]]);
+      childrenBox.replaceChildren();targetText.textContent="NONE";return;
     }
     targetText.textContent=b.enName;
     const aAU=b.aAU ?? (b.aKm?b.aKm/AU_KM:null);
@@ -395,7 +452,7 @@
     if(aAU!=null&&b.orbitalPeriodDays){
       const aKm=aAU*AU_KM;
       const T=b.orbitalPeriodDays*86400;
-      vOrbit=2*Math.PI*aKm/T/1000;
+      vOrbit=2*Math.PI*aKm/T;
       meanMotion=360/b.orbitalPeriodDays;
     }
     let gSurf=null,vEsc=null;
@@ -406,19 +463,31 @@
       vEsc=Math.sqrt(2*G*M/R)/1000;
     }
     const sun=byId.get("sun");
-    const rAUcur=Math.hypot(b.x-sun.x,b.y-sun.y)/AU;
+    const parent=b.parentId?byId.get(b.parentId):null;
+    const bx=b.physX??b.x,by=b.physY??b.y;
+    const sx=sun.physX??sun.x,sy=sun.physY??sun.y;
+    const rAUcur=Math.hypot(bx-sx,by-sy)/AU;
     const rKmcur=rAUcur*AU_KM;
+    let parentRAUcur=null,parentRKmcur=null;
+    if(parent && parent!==sun){
+      const px=parent.physX??parent.x,py=parent.physY??parent.y;
+      parentRAUcur=Math.hypot(bx-px,by-py)/AU;
+      parentRKmcur=parentRAUcur*AU_KM;
+    }
+    const periLabel=(parent && parent!==sun)?"PERIAPSIS q":"PERIHELION q";
+    const apoLabel=(parent && parent!==sun)?"APOAPSIS Q":"APHELION Q";
 
     const rows=[
       ["TARGET",`${b.name} / ${b.enName}`],
       ["DESIGNATION",b.id.toUpperCase()],
       ["TYPE",b.type.toUpperCase()],
       ["EPOCH (days)",`T${simDaysTotal()>=0?"+":""}${Math.round(simDaysTotal())} d`],
-      ["CURRENT r",`${fmt(rAUcur,4)}AU/${fmt(rKmcur,2)}km`],
+      ["CURRENT SOL r",`${fmt(rAUcur,4)} AU / ${fmt(rKmcur,2)} km`],
+      ...(parentRAUcur!=null?[["CURRENT PARENT r",`${fmt(parentRAUcur,6)} AU / ${fmt(parentRKmcur,2)} km`]]:[]),
       ["SEMIMAJOR AXIS a",aAU!=null?`${fmt(aAU,4)} AU`:"--"],
       ["ECCENTRICITY e",e!=null?fmt(e,4):"--"],
-      ["PERIHELION q",q!=null?`${fmt(q,4)} AU`:"--"],
-      ["APHELION Q",Q!=null?`${fmt(Q,4)} AU`:"--"],
+      [periLabel,q!=null?`${fmt(q,4)} AU`:"--"],
+      [apoLabel,Q!=null?`${fmt(Q,4)} AU`:"--"],
       ["ORBITAL PERIOD",b.orbitalPeriodDays?`${fmt(b.orbitalPeriodDays,2)} d`:"--"],
       ["MEAN MOTION n",meanMotion!=null?`${fmt(meanMotion,3)} °/day`:"--"],
       ["MEAN ORBIT SPEED",vOrbit!=null?`${fmt(vOrbit,2)} km/s`:"--"],
@@ -434,8 +503,8 @@
       ["TIDAL STATE",b.tidallyLocked?"LOCKED":"FREE"],
       ["CHILD COUNT",b.children?b.children.length:0],
     ];
-    readout.innerHTML=rows.map(r=>`<div class="k">${r[0]}</div><div>${r[1]}</div>`).join("");
-    childrenBox.innerHTML="";
+    renderReadoutRows(rows);
+    childrenBox.replaceChildren();
     if(b.children && b.children.length){
       b.children.forEach(c=>{
         const div=document.createElement("div");
@@ -444,7 +513,10 @@
         childrenBox.appendChild(div);
       });
     }else{
-      childrenBox.innerHTML=`<div class="child dim">-- NO CHILDREN --</div>`;
+      const div=document.createElement("div");
+      div.className="child dim";
+      div.textContent="-- NO CHILDREN --";
+      childrenBox.appendChild(div);
     }
   }
 
@@ -485,9 +557,14 @@
     const minL=Math.log(MIN_ZOOM),maxL=Math.log(MAX_ZOOM);
     return (Math.log(z)-minL)/(maxL-minL);
   };
+  let zoomTrackWidth=0;
+  const readZoomTrackWidth=()=>{
+    zoomTrackWidth=zoomTrack.clientWidth || zoomTrack.getBoundingClientRect().width || 1;
+    return zoomTrackWidth;
+  };
   const positionThumb=t=>{
-    const r=zoomTrack.getBoundingClientRect();
-    zoomThumb.style.left=(r.width*t)+"px";
+    const w=zoomTrackWidth || readZoomTrackWidth();
+    zoomThumb.style.left=(w*t)+"px";
   };
   const setZoomNorm=t=>{
     t=clamp(t,0,1);
@@ -497,6 +574,7 @@
     positionThumb(t);
   };
   const syncZoomBarFromCamera=()=>positionThumb(normFromZoom(camera.zoom));
+  addEventListener("resize",()=>{zoomTrackWidth=0;syncZoomBarFromCamera();});
   syncZoomBarFromCamera();
   zoomThumb.addEventListener("pointerdown",e=>{barDragging=true;zoomThumb.setPointerCapture(e.pointerId);});
   window.addEventListener("pointermove",e=>{
@@ -625,7 +703,7 @@
   }));
 
   const introBgm = new Audio("kplbgm.mp3");
-  introBgm.preload = "auto";
+  introBgm.preload = "metadata";
   introBgm.loop = false;
 
   const intro={
@@ -1073,6 +1151,7 @@ this.timelineLen=t;
   }
 
   canvas.addEventListener("pointerdown",e=>{
+    if(e.pointerType==="touch")return;
     userInteracted=true;
     if(tryInterruptIntro())return;
     closeAllDrawers();
@@ -1080,6 +1159,7 @@ this.timelineLen=t;
     dragStart={x:e.clientX,y:e.clientY};camStart={x:camera.x,y:camera.y};
   });
   canvas.addEventListener("pointermove",e=>{
+    if(e.pointerType==="touch")return;
     if(!dragging||intro.active)return;
     const dx=e.clientX-dragStart.x,dy=e.clientY-dragStart.y;
     if(Math.hypot(dx,dy)>2)moved=true;
@@ -1088,6 +1168,7 @@ this.timelineLen=t;
     camera.target=null;
   });
   canvas.addEventListener("pointerup",e=>{
+    if(e.pointerType==="touch")return;
     if(intro.active)return;
     dragging=false;
     if(!moved){
@@ -1122,17 +1203,20 @@ this.timelineLen=t;
     syncZoomBarFromCamera();
   },{passive:false});
 
-  let touchMode=null,lastTouches=[],touchPinchStartDist=0,touchPinchStartZoom=0,touchPinchWorldCenter=null;
+  let touchMode=null,lastTouches=[],touchPinchStartDist=0,touchPinchStartZoom=0,touchPinchWorldCenter=null,touchMoved=false,touchLastPoint=null;
   canvas.addEventListener("touchstart",e=>{
     userInteracted=true;
     if(tryInterruptIntro()){e.preventDefault();return;}
     closeAllDrawers();
+    touchMoved=false;
     if(e.touches.length===1){
       touchMode="pan";
       lastTouches=[...e.touches].map(t=>({id:t.identifier,x:t.clientX,y:t.clientY}));
+      touchLastPoint={x:lastTouches[0].x,y:lastTouches[0].y};
       camStart={x:camera.x,y:camera.y};
     }else if(e.touches.length===2){
       touchMode="pinch";
+      touchMoved=true;
       lastTouches=[...e.touches].map(t=>({id:t.identifier,x:t.clientX,y:t.clientY}));
       const dx=lastTouches[0].x-lastTouches[1].x,dy=lastTouches[0].y-lastTouches[1].y;
       touchPinchStartDist=Math.hypot(dx,dy);
@@ -1149,10 +1233,13 @@ this.timelineLen=t;
       const t=e.touches[0];
       const dx=t.clientX-lastTouches[0].x;
       const dy=t.clientY-lastTouches[0].y;
+      touchLastPoint={x:t.clientX,y:t.clientY};
+      if(Math.hypot(dx,dy)>3)touchMoved=true;
       camera.x=camStart.x-dx*DPR/camera.zoom;
       camera.y=camStart.y-dy*DPR/camera.zoom;
       camera.target=null;
     }else if(touchMode==="pinch"&&e.touches.length===2){
+      touchMoved=true;
       const t0=e.touches[0],t1=e.touches[1];
       const dx=t0.clientX-t1.clientX,dy=t0.clientY-t1.clientY;
       const dist=Math.hypot(dx,dy);
@@ -1167,7 +1254,15 @@ this.timelineLen=t;
       camera.target=null;syncZoomBarFromCamera();
     }
   },{passive:false});
-  canvas.addEventListener("touchend",()=>{touchMode=null;});
+  canvas.addEventListener("touchend",e=>{
+    if(touchMode==="pan"&&!touchMoved&&touchLastPoint){
+      const p=e.changedTouches[0]||touchLastPoint;
+      const pick=pickBodyOrLabel((p.clientX??p.x)*DPR,(p.clientY??p.y)*DPR);
+      if(pick)lockTarget(pick);
+      else{camera.target=null;updateTelemetry(null);updateNavActive();}
+    }
+    touchMode=null;touchLastPoint=null;touchMoved=false;
+  });
 
   let lastLabels=[];
   function pickBodyOrLabel(sx,sy){
@@ -1188,6 +1283,25 @@ this.timelineLen=t;
 
   function screenCircleVisible(x,y,r){
     return(x+r>-80*DPR && x-r<W+80*DPR && y+r>-80*DPR && y-r<H+80*DPR);
+  }
+  function viewportWorldRadius(extraPx=96*DPR){
+    return (Math.hypot(W,H)*0.5+extraPx)/Math.max(camera.zoom,MIN_ZOOM);
+  }
+  function orbitNearViewport(parent,aWorld,e){
+    const camDist=Math.hypot(camera.x-parent.x,camera.y-parent.y);
+    const viewR=viewportWorldRadius();
+    const minR=aWorld*Math.max(0,1-e);
+    const maxR=aWorld*(1+e);
+    return camDist+viewR>=minR && camDist-viewR<=maxR;
+  }
+  function shouldDrawRealtimeOrbit(b){
+    if(!b.parentId)return false;
+    if(b.isBeltAsteroid){
+      if(camera.target===b)return true;
+      if(camera.zoom>0.35)return false;
+      if(camera.zoom>0.12 && !b.isIntroBeltSample)return false;
+    }
+    return true;
   }
 
   function drawStarfield(){
@@ -1232,6 +1346,7 @@ this.timelineLen=t;
   function drawOrbit(b){
     if(!b.parentId)return;
     const p=byId.get(b.parentId);
+    if(!p)return;
     const isMoon=b.type==="moon";
     const e=b.eccentricity||0;
     let alpha=orbitIntroAlpha(b);
@@ -1251,6 +1366,7 @@ this.timelineLen=t;
     const aAUviz=aAUphys*(isMoon?moonScale:1);
     const aWorld=aAUviz*AU;
     if(aWorld<=0)return;
+    if(!orbitNearViewport(p,aWorld,e))return;
 
     ctx.strokeStyle=orbitStrokeFor(b,alpha);
     ctx.lineWidth=1/camera.zoom;
@@ -1260,8 +1376,8 @@ this.timelineLen=t;
     let steps=Math.round(approxCirc*camera.zoom/baseSeg);
     const eBoost=1+3*e;
     steps=Math.round(steps*eBoost);
-    const maxSteps=(b.type==="comet"||e>0.6)?1200:300;
-    const minSteps=(b.type==="comet"||e>0.6)?140:50;
+    const maxSteps=b.isBeltAsteroid?96:((b.type==="comet"||e>0.6)?1200:300);
+    const minSteps=b.isBeltAsteroid?28:((b.type==="comet"||e>0.6)?140:50);
     steps=clamp(steps,minSteps,maxSteps);
     if(intro.active){
       const isFocusOrbit=!!(intro.currentBody && (b.id===intro.currentBody.id || b.parentId===intro.currentBody.id));
@@ -1270,19 +1386,38 @@ this.timelineLen=t;
       const introMin=isFocusOrbit?40:24;
       steps=clamp(Math.round(steps*introStepScale),introMin,introMax);
     }
-    const orient=b.orientRad||0;
+    const projectionKey=`${b.lonNodeRad||0}|${b.argPeriRad||0}|${b.incRad||0}`;
 
     if(b.orbitMode==="ellipse"&&e>0){
-      ctx.beginPath();
-      for(let i=0;i<=steps;i++){
-        const f=i/steps*TWO_PI;
-        const rNorm=(1-e*e)/(1+e*Math.cos(f));
-        const r=aWorld*rNorm;
-        const theta=f+orient;
-        const x=p.x+r*Math.cos(theta),y=p.y+r*Math.sin(theta);
-        if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+      const cacheKey=`${steps}|${aWorld}|${e}|${projectionKey}`;
+      if(typeof Path2D==="function"){
+        if(!b._orbitPathCache || b._orbitPathCache.key!==cacheKey){
+          const path=new Path2D();
+          for(let i=0;i<=steps;i++){
+            const f=i/steps*TWO_PI;
+            const rNorm=(1-e*e)/(1+e*Math.cos(f));
+            const r=aWorld*rNorm;
+            const o=orbitOffset(r,f,b);
+            if(i===0)path.moveTo(o.x,o.y);else path.lineTo(o.x,o.y);
+          }
+          b._orbitPathCache={key:cacheKey,path};
+        }
+        ctx.save();
+        ctx.translate(p.x,p.y);
+        ctx.stroke(b._orbitPathCache.path);
+        ctx.restore();
+      }else{
+        ctx.beginPath();
+        for(let i=0;i<=steps;i++){
+          const f=i/steps*TWO_PI;
+          const rNorm=(1-e*e)/(1+e*Math.cos(f));
+          const r=aWorld*rNorm;
+          const o=orbitOffset(r,f,b);
+          const x=p.x+o.x,y=p.y+o.y;
+          if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
     }else{
       ctx.beginPath();ctx.arc(p.x,p.y,aWorld,0,TWO_PI);ctx.stroke();
     }
@@ -1490,9 +1625,16 @@ this.timelineLen=t;
     ctx.save();ctx.setTransform(1,0,0,1,0,0);
 
     cands.forEach(c=>{
-      ctx.font = `${c.fs * DPR}px "Orbitron","Space Mono","Noto Sans SC",sans-serif`;
-      const w=ctx.measureText(c.text).width;
-      const h=c.fs*DPR*1.2;
+      const titleFontSize=c.fs*DPR;
+      ctx.font = `${titleFontSize}px "Orbitron","Space Mono","Noto Sans SC",sans-serif`;
+      const measureKey=`${c.text}|${titleFontSize}`;
+      if(c.body._labelMeasureKey!==measureKey){
+        c.body._labelMeasureKey=measureKey;
+        c.body._labelW=ctx.measureText(c.text).width;
+      }
+      const w=c.body._labelW;
+      const hasCN=c.pr>=3 && c.body.type!=="asteroid";
+      const h=c.fs*DPR*(hasCN?2.05:1.2);
       const pad=4*DPR;
       const x=c.sx-w/2-pad,y=c.sy-h/2-pad;
       const box={x,y,w:w+pad*2,h:h+pad*2};
@@ -1523,7 +1665,7 @@ this.timelineLen=t;
       ctx.fillText(c.text,c.sx,c.sy);
       ctx.shadowOffsetX=0;ctx.shadowColor="transparent";
 
-      if(c.pr>=3 && c.body.type!=="asteroid"){
+      if(hasCN){
         ctx.font=`${(c.fs-2)*DPR}px "Noto Sans SC"`;
         ctx.fillStyle="rgba(224,224,224,0.9)";
         ctx.fillText(c.textCN,c.sx,c.sy+(c.fs*0.9)*DPR);
@@ -1672,7 +1814,9 @@ this.timelineLen=t;
         else b._visible=false;
       }
     }else{
-      bodies.forEach(drawOrbit);
+      for(const b of bodies){
+        if(shouldDrawRealtimeOrbit(b))drawOrbit(b);
+      }
       bodies.forEach(drawBody);
     }
     endWorld();
